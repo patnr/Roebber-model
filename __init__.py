@@ -8,8 +8,8 @@ Model first proposed by `bib.roebber1995climate`.
 # while Tardif uses the original "unit-full" equations.
 
 from collections import namedtuple
+from dapper.tools.progressbar import progbar
 import numpy as np
-import mpl_tools.place as place
 
 import dapper.mods as modelling
 
@@ -17,42 +17,39 @@ import dapper.mods as modelling
 a  = 0.25
 b  = 4.0
 
-# Ocean box volumes (m^3)
-V0 = 10**8  # NB: tuned by me to obtain interesting output
-# V0 = 10**16
-V1 = 0.832 * V0
-V2 = 2.592 * V0
-V3 = 10.3  * V0
+# Ocean box volumes
+unitV = 10**11  # NB
+# unitV = 10**16  # (m^3)
+V1 = 0.832 * unitV
+V2 = 2.592 * unitV
+V3 = 10.3  * unitV
 
-# Coefficients (m^3 / s)
-K0 = 10**6
-KT = 10.5 * K0  # heat exchange
-KZ = 1.0  * K0  # vertical eddy diffusion (upper-deep ocean)
+# Coefficients
+unitK = 10**6  # (m^3 / s)
+KT = 10.5 * unitK  # heat exchange
+KZ = 1.0  * unitK  # vertical eddy diffusion (upper-deep ocean)
 
 # Coefficients of meriodional zonal diabatic heating
 F0, F1, F2 = 6.65, 2.0, 47.9
 G0, G1, G2 = -3.6, 1.24, 3.81
 
-# Linear fit/parametrisation of equivalent salt flux by eddy energy (m^3 / s)
-c0 = 10**6
-c1 = 1.25  * c0
-c2 = 0.156 * c0
+# Linear fit/parametrisation of equivalent salt flux by eddy energy
+unitC = 10**6  # (m^3 / s)
+c1 = 1.25  * unitC
+c2 = 0.156 * unitC
 
 # Thermal wind balance parameterisation
-# gamma = 0.06848 # Used by Tardif
-gamma = 10  # NB: tuned by me to obtain interesting output
-# T0    = 278.15 # 5°C. Used by Tardif
+gamma = 0.06848  # Used by Tardif
+# T0    = 278.15  # 5°C. Used by Tardif
 T0    = 298.15   # 25°C. Used by Roebber
 TA2   = 298.15   # 25°C. Used by both
 
 # MOC constants
 # Coefficients for thermal and haline expansion of seawater
-ab0 = 10**-4
-alpha = 1.0 * ab0   # K^-1
-beta  = 8.0 * ab0   # psu^-1
+alpha = 1.0 * 10**-4   # K^-1
+beta  = 8.0 * 10**-4   # psu^-1
 # Proportionality constant
-mu0 = 10**10
-mu    = 4.0 * mu0    # m^3 / s
+mu    = 4.0 * 10**10  # m^3 / s
 
 StateVector = namedtuple("StateVector",
                          ["x", "y", "z", "T1", "T2", "T3", "S1", "S2", "S3"])
@@ -73,15 +70,17 @@ def dxdt(state, t):
     y2 = y*y
     z2 = z*z
 
-    # F = F0 + F1*np.cos(omega * t) + F2*(T2 - T1)/T0
-    # G = G0 + G1*np.cos(omega * t) + G2*T1/T0
-
-    F = 8.0
-    G = 1.23
-
+    # Make atoms. constant
     # dx = 0
     # dy = 0
     # dz = 0
+
+    F = F0 + F1*np.cos(omega * t) + F2*(T2 - T1)/T0
+    G = G0 + G1*np.cos(omega * t) + G2*T1/T0
+
+    # Constants used in uncoupled L84
+    # F = 8.0
+    # G = 1.23
 
     dx = - y2 - z2 - a*x + a*F
     dy = x*y - b*x*z - y + G
@@ -112,38 +111,63 @@ step = modelling.with_rk4(dxdt, stages=2)
 
 
 if __name__ == "__main__":
-    nYears = 50
-    # nYears = 1e9
+    nYears = 4000
     T  = nYears*YEAR
     K  = round(T/dt)
     tt = np.linspace(0, T, K+1)
 
     np.random.seed(3)
-    xyz0 = 0.97, 0.12, 0.32
-    sal0 = 0.62, 0.83, 1.07
+    xyz0 = 0.97, 0.12, 0.32  # L84 mean
+    sal0 = 1.5, 0.9, 1.0
     tmp0 = (310, 295, 305)
     # tmp0   = (298,) * 3
     x0   = (*xyz0, *tmp0, *sal0)
     x0   = x0 + 0*np.random.randn(9)
-    simulator = modelling.with_recursion(step, prog="Simulating")
+
+    def simulator(x, K, t0, dt):
+        xx = np.zeros((K+1, len(x)))
+        xx[0] = x
+        for k in progbar(range(K)):
+            tk = t0 + k*dt
+            xx[k+1] = step(xx[k], tk, dt)
+        return xx
     xx = simulator(x0, K, t0=0, dt=dt)
 
     ## Plot
+    # Group state components
+    def groupby(k0):
+        states = StateVector(*xx.T)._asdict().items()
+        return {lbl[1:]: v for lbl, v in states if lbl[0] == k0}
+    first_letters = list({lbl[0]: None for lbl in StateVector._fields})
+    grouped = {k0: groupby(k0) for k0 in first_letters}
+    grouped["MOC"] = {None: MOC(xx.T)}
+
     from matplotlib import pyplot as plt
+    import mpl_tools.place as place
     plt.ion()
-    lbls = StateVector._fields + ("MOC", )
-    fig, axs = place.freshfig(1, figsize=(9, 6), nrows=len(lbls), sharex=True)
-    for variable, label, ax in zip(xx.T, lbls, axs):
-        ax.plot(tt/YEAR, variable)
-        ax.set_ylabel(label)
-        if "T" in label:
-            ax.axhline(273.15, c="k", lw=0.5)
-            # ax.set_ylim(top=300)
-    axs[-1].plot(tt/YEAR, MOC(xx.T).T)
-    axs[-1].set_ylabel("MOC")
+    fig, axs = place.freshfig("Time series", figsize=(9, 6),
+                              nrows=len(grouped), sharex=True,
+                              gridspec_kw={'hspace': 0.0})
+
+    for lbl0, ax in zip(grouped, axs):
+        group = grouped[lbl0]
+        legion = len(group) > 1
+        for i, (lbl1, series) in enumerate(group.items()):
+            # ax.plot((tt/YEAR), series,
+            ax.plot((tt/YEAR)[::10], series[::10],
+                    label=lbl1, c=f"C{i+legion}",
+                    lw=(.4 if lbl0 in "xyz" else 2))
+        # if lbl0 == "T":
+        #     ax.axhline(273.15, c="k", lw=0.5)
+        if legion:
+            ax.legend(loc="upper right")
+        ax.set_ylabel(lbl0)
+
     axs[-1].set_xlabel("Years")
+    # Align ylabels
     for ax in axs:
         ax.yaxis.set_label_coords(-.08, .5)
+    fig.tight_layout()
 
     fig.savefig("time_series.pdf")
-    # plt.show()
+    fig.savefig("time_series.png")
