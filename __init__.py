@@ -144,4 +144,6 @@ if __name__ == "__main__":
     axs[-1].set_xlabel("Years")
     for ax in axs:
         ax.yaxis.set_label_coords(-.08, .5)
-    plt.show()
+
+    fig.savefig("time_series.pdf")
+    # plt.show()
