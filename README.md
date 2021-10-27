@@ -6,4 +6,6 @@ Run script with:
 
     python __init__.py
 
-View plot in `time_series.pdf`.
+If your matplotlib install comes with an interactive frontend,
+then the plot should show (and be zoomable) automatically.
+Alternatively, it can be viewed in `time_series.pdf`.
