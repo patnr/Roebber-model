@@ -9,3 +9,6 @@ Run script with:
 If your matplotlib install comes with an interactive frontend,
 then the plot should show (and be zoomable) automatically.
 Alternatively, it can be viewed in `time_series.pdf`.
+
+The current resulting output is shown here
+![plot](time_series.png)
