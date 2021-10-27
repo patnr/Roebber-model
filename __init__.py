@@ -18,41 +18,41 @@ a  = 0.25
 b  = 4.0
 
 # Ocean box volumes (m^3)
-V0 = 10**16
+V0 = 10**8  # NB: tuned by me to obtain interesting output
+# V0 = 10**16
 V1 = 0.832 * V0
 V2 = 2.592 * V0
 V3 = 10.3  * V0
 
 # Coefficients (m^3 / s)
-KT = 10.5 * 10**6  # heat exchange
-KZ = 1.0  * 10**6  # vertical eddy diffusion (upper-deep ocean)
+K0 = 10**6
+KT = 10.5 * K0  # heat exchange
+KZ = 1.0  * K0  # vertical eddy diffusion (upper-deep ocean)
 
 # Coefficients of meriodional zonal diabatic heating
 F0, F1, F2 = 6.65, 2.0, 47.9
 G0, G1, G2 = -3.6, 1.24, 3.81
 
 # Linear fit/parametrisation of equivalent salt flux by eddy energy (m^3 / s)
-c1 = 1.25  * 10**6
-c2 = 0.156 * 10**6
+c0 = 10**6
+c1 = 1.25  * c0
+c2 = 0.156 * c0
 
 # Thermal wind balance parameterisation
-gamma = 0.06848
+# gamma = 0.06848 # Used by Tardif
+gamma = 10  # NB: tuned by me to obtain interesting output
 # T0    = 278.15 # 5°C. Used by Tardif
 T0    = 298.15   # 25°C. Used by Roebber
 TA2   = 298.15   # 25°C. Used by both
 
 # MOC constants
 # Coefficients for thermal and haline expansion of seawater
-alpha = 1.0 * 10**-4   # K^-1
-beta  = 8.0 * 10**-4   # psu^-1
+ab0 = 10**-4
+alpha = 1.0 * ab0   # K^-1
+beta  = 8.0 * ab0   # psu^-1
 # Proportionality constant
-mu    = 4.0 * 10**10    # m^3 / s
-
-# 1 time unit <--> 5 days (according to Lorenz'84)
-DAY = 1/5
-YEAR = 365*DAY
-omega = 2 * np.pi / YEAR
-
+mu0 = 10**10
+mu    = 4.0 * mu0    # m^3 / s
 
 StateVector = namedtuple("StateVector",
                          ["x", "y", "z", "T1", "T2", "T3", "S1", "S2", "S3"])
@@ -73,8 +73,15 @@ def dxdt(state, t):
     y2 = y*y
     z2 = z*z
 
-    F = F0 + F1*np.cos(omega * t) + F2*(T2 - T1)/T0
-    G = G0 + G1*np.cos(omega * t) + G2*T1/T0
+    # F = F0 + F1*np.cos(omega * t) + F2*(T2 - T1)/T0
+    # G = G0 + G1*np.cos(omega * t) + G2*T1/T0
+
+    F = 8.0
+    G = 1.23
+
+    # dx = 0
+    # dy = 0
+    # dz = 0
 
     dx = - y2 - z2 - a*x + a*F
     dy = x*y - b*x*z - y + G
@@ -94,25 +101,36 @@ def dxdt(state, t):
     return np.array([dx, dy, dz, dT1, dT2, dT3, dS1, dS2, dS3])
 
 
+# 1 time unit <--> 5 days (according to Lorenz'84)
+DAY = 1/5
+YEAR = 365*DAY
+omega = 2 * np.pi / YEAR
+
 # dt = 1/30   # (4 hours) as in Lorenz'84 -- with rk4
 dt = 3/120  # (3 hours) as in Tardif'14 -- with rk2
 step = modelling.with_rk4(dxdt, stages=2)
 
 
 if __name__ == "__main__":
-    nYears = 10
+    nYears = 50
+    # nYears = 1e9
     T  = nYears*YEAR
     K  = round(T/dt)
     tt = np.linspace(0, T, K+1)
 
     np.random.seed(3)
-    x0  = np.concatenate(([0]*3, [T0]*3, [1]*3), dtype=float)
-    x0 += np.random.randn(9)
+    xyz0 = 0.97, 0.12, 0.32
+    sal0 = 0.62, 0.83, 1.07
+    tmp0 = (310, 295, 305)
+    # tmp0   = (298,) * 3
+    x0   = (*xyz0, *tmp0, *sal0)
+    x0   = x0 + 0*np.random.randn(9)
     simulator = modelling.with_recursion(step, prog="Simulating")
     xx = simulator(x0, K, t0=0, dt=dt)
 
     ## Plot
     from matplotlib import pyplot as plt
+    plt.ion()
     lbls = StateVector._fields + ("MOC", )
     fig, axs = place.freshfig(1, figsize=(9, 6), nrows=len(lbls), sharex=True)
     for variable, label, ax in zip(xx.T, lbls, axs):
