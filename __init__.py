@@ -8,6 +8,7 @@ Model first proposed by `bib.roebber1995climate`.
 # while Tardif uses the original "unit-full" equations.
 
 from collections import namedtuple
+from pathlib import Path
 from dapper.tools.progressbar import progbar
 import numpy as np
 
@@ -70,14 +71,8 @@ def dxdt(state, t):
     y2 = y*y
     z2 = z*z
 
-    # Make atoms. constant
-    # dx = 0
-    # dy = 0
-    # dz = 0
-
     F = F0 + F1*np.cos(omega * t) + F2*(T2 - T1)/T0
     G = G0 + G1*np.cos(omega * t) + G2*T1/T0
-
     # Constants used in uncoupled L84
     # F = 8.0
     # G = 1.23
@@ -85,6 +80,8 @@ def dxdt(state, t):
     dx = - y2 - z2 - a*x + a*F
     dy = x*y - b*x*z - y + G
     dz = b*x*y + x*z - z
+    # Make atoms. constant
+    # dx = dy = dz = 0
 
     Qs = c1 + c2*(y2 + z2)
     TA1 = TA2 - gamma * x
@@ -105,22 +102,25 @@ DAY = 1/5
 YEAR = 365*DAY
 omega = 2 * np.pi / YEAR
 
+# If you turn off the atmosphere, then you can use much larger dt
 # dt = 1/30   # (4 hours) as in Lorenz'84 -- with rk4
 dt = 3/120  # (3 hours) as in Tardif'14 -- with rk2
 step = modelling.with_rk4(dxdt, stages=2)
 
 
 if __name__ == "__main__":
-    nYears = 4000
+    nYears = 1000
     T  = nYears*YEAR
     K  = round(T/dt)
     tt = np.linspace(0, T, K+1)
 
     np.random.seed(3)
-    xyz0 = 0.97, 0.12, 0.32  # L84 mean
-    sal0 = 1.5, 0.9, 1.0
-    tmp0 = (310, 295, 305)
-    # tmp0   = (298,) * 3
+    xyz0 = np.array([0.97, 0.12, 0.32])
+    sal0 = np.array([.2, .9, 1.3])
+    tmp0 = np.array([-5, 5, 10]) + T0
+    # xyz0 = 0.97, 0.12, 0.32  # L84 mean
+    # sal0 = .2, 0.9, 1.3
+    # tmp0 = 295, 305, 310
     x0   = (*xyz0, *tmp0, *sal0)
     x0   = x0 + 0*np.random.randn(9)
 
@@ -137,10 +137,10 @@ if __name__ == "__main__":
     # Group state components
     def groupby(k0):
         states = StateVector(*xx.T)._asdict().items()
-        return {lbl[1:]: v for lbl, v in states if lbl[0] == k0}
+        return {"box" + lbl[1:]: v for lbl, v in states if lbl[0] == k0}
     first_letters = list({lbl[0]: None for lbl in StateVector._fields})
     grouped = {k0: groupby(k0) for k0 in first_letters}
-    grouped["MOC"] = {None: MOC(xx.T)}
+    grouped["MOC (1e6)"] = {None: MOC(xx.T) / 1e6}
 
     from matplotlib import pyplot as plt
     import mpl_tools.place as place
@@ -169,5 +169,9 @@ if __name__ == "__main__":
         ax.yaxis.set_label_coords(-.08, .5)
     fig.tight_layout()
 
-    fig.savefig("time_series.pdf")
-    fig.savefig("time_series.png")
+    filename = "time_series"
+    i = 0
+    while Path(f"{filename}_{i}.png").exists():
+        i += 1
+    fig.savefig(f"{filename}_{i}.png")
+    fig.savefig(f"{filename}_{i}.pdf")
